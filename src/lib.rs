@@ -1,9 +1,29 @@
 use std::{
-    collections::{hash_set, BTreeMap, BinaryHeap, HashSet},
+    collections::{BTreeMap, BinaryHeap},
     hash::Hash,
 };
 
 type Score = i32;
+struct Scored<T> {
+    pub item: T,
+    pub score: Score,
+}
+impl<T> Ord for Scored<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.score.cmp(&other.score)
+    }
+}
+impl<T> PartialOrd for Scored<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<T> PartialEq for Scored<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.score == other.score
+    }
+}
+impl<T> Eq for Scored<T> {}
 pub struct Key {
     pub bytes: Vec<u8>,
     pub score: Score,
@@ -13,7 +33,7 @@ pub trait Completable: Eq + Clone + Hash {
 }
 
 pub struct CompletionTree<T> {
-    items: HashSet<T>,
+    items: Vec<Scored<T>>,
     children: BTreeMap<u8, CompletionTree<T>>,
     max_score: Score,
 }
@@ -46,7 +66,10 @@ where
             cur = cur.children.entry(b).or_default();
         }
         cur.max_score = std::cmp::max(key.score, cur.max_score);
-        cur.items.insert(item);
+        cur.items.push(Scored {
+            item,
+            score: key.score,
+        });
     }
 
     pub fn search(&self, prefix: &[u8]) -> impl Iterator<Item = &T> {
@@ -65,72 +88,52 @@ where
     }
 }
 
-struct ExploreMarker<'a, T>(&'a CompletionTree<T>);
-impl<'a, T> Ord for ExploreMarker<'a, T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.max_score.cmp(&other.0.max_score)
-    }
+enum ExploreMarker<'a, T> {
+    Item(&'a T),
+    Node(&'a CompletionTree<T>),
 }
-impl<'a, T> PartialOrd for ExploreMarker<'a, T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl<'a, T> PartialEq for ExploreMarker<'a, T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.max_score == other.0.max_score
-    }
-}
-impl<'a, T> Eq for ExploreMarker<'a, T> {}
 struct CompletionIter<'a, T> {
-    queue: BinaryHeap<ExploreMarker<'a, T>>,
-    cur: Option<hash_set::Iter<'a, T>>,
+    queue: BinaryHeap<Scored<ExploreMarker<'a, T>>>,
 }
 impl<'a, T> CompletionIter<'a, T> {
     fn empty() -> Self {
         Self {
             queue: BinaryHeap::new(),
-            cur: None,
         }
     }
     fn from(node: &'a CompletionTree<T>) -> Self {
         let mut queue = BinaryHeap::new();
-        queue.push(ExploreMarker(node));
-        Self {
-            queue,
-            cur: Some(node.items.iter()),
-        }
-    }
-
-    fn poll_item(&mut self) -> Option<&'a T> {
-        if let Some(iter) = self.cur.as_mut() {
-            if let Some(v) = iter.next() {
-                return Some(v);
-            } else {
-                self.cur.take();
-            }
-        }
-        None
+        queue.push(Scored {
+            item: ExploreMarker::Node(node),
+            score: node.max_score,
+        });
+        Self { queue }
     }
 }
 impl<'a, T> Iterator for CompletionIter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some(item) = self.poll_item() {
-                return Some(item);
-            }
-            match self.queue.pop() {
-                None => return None,
-                Some(ExploreMarker(node)) => {
-                    for child in node.children.values() {
-                        self.queue.push(ExploreMarker(child));
+        while let Some(cur) = self.queue.pop() {
+            match cur.item {
+                ExploreMarker::Item(item) => return Some(item),
+                ExploreMarker::Node(node) => {
+                    for item in &node.items {
+                        self.queue.push(Scored {
+                            item: ExploreMarker::Item(&item.item),
+                            score: item.score,
+                        });
                     }
-                    self.cur = Some(node.items.iter());
+                    for child in node.children.values() {
+                        self.queue.push(Scored {
+                            item: ExploreMarker::Node(child),
+                            score: child.max_score,
+                        });
+                    }
                 }
             }
         }
+        None
     }
 }
 
