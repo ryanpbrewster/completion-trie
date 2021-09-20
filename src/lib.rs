@@ -169,4 +169,20 @@ mod tests {
             vec![&alex, &alice, &adam]
         )
     }
+
+    #[test]
+    fn exploration_prioritizes_shallower_items() {
+        let one = TestItem::new("a", 1);
+        let two = TestItem::new("aa", 0);
+        let three = TestItem::new("aaa", 1);
+
+        let mut tree = CompletionTree::default();
+        tree.put(one.clone());
+        tree.put(two.clone());
+        tree.put(three.clone());
+        assert_eq!(
+            tree.search(b"").collect::<Vec<_>>(),
+            vec![&one, &three, &two]
+        )
+    }
 }
