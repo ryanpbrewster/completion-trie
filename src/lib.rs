@@ -32,51 +32,58 @@ pub trait Completable: Eq + Clone + Hash {
     fn keys(&self) -> Vec<Key>;
 }
 
-pub struct CompletionTree<T> {
-    items: Vec<Scored<T>>,
-    children: BTreeMap<u8, CompletionTree<T>>,
-    max_score: Score,
-}
+pub struct CompletionTree<T>(Option<Node<T>>);
 impl<T> Default for CompletionTree<T> {
     fn default() -> Self {
-        Self {
-            items: Default::default(),
-            children: Default::default(),
-            // TODO: change a tree to be a { node: Option<Node> } struct
-            // so that we don't have to populate a synthetic max_score.
-            max_score: 0,
-        }
+        Self(None)
     }
 }
-
 impl<T> CompletionTree<T>
 where
     T: Completable,
 {
     pub fn put(&mut self, item: T) {
         for key in item.keys() {
-            self.put_key(key, item.clone());
+            self.0
+                .get_or_insert_with(|| Node::new(key.score))
+                .put_key(key, item.clone());
         }
-    }
-
-    fn put_key(&mut self, key: Key, item: T) {
-        let mut cur = self;
-        for b in key.bytes {
-            cur.max_score = std::cmp::max(key.score, cur.max_score);
-            cur = cur.children.entry(b).or_default();
-        }
-        cur.max_score = std::cmp::max(key.score, cur.max_score);
-        cur.items.push(Scored {
-            item,
-            score: key.score,
-        });
     }
 
     pub fn search(&self, prefix: &[u8]) -> impl Iterator<Item = &T> {
-        match self.descendent(prefix) {
+        let descendent = self.0.as_ref().and_then(|root| root.descendent(prefix));
+        match descendent {
             None => CompletionIter::empty(),
             Some(node) => CompletionIter::from(node),
         }
+    }
+}
+
+struct Node<T> {
+    items: Vec<Scored<T>>,
+    children: BTreeMap<u8, Node<T>>,
+    max_score: Score,
+}
+impl<T> Node<T>
+where
+    T: Completable,
+{
+    fn new(max_score: Score) -> Self {
+        Self {
+            items: Default::default(),
+            children: Default::default(),
+            max_score,
+        }
+    }
+    fn put_key(&mut self, key: Key, item: T) {
+        let score = key.score;
+        let mut cur = self;
+        for b in key.bytes {
+            cur.max_score = std::cmp::max(score, cur.max_score);
+            cur = cur.children.entry(b).or_insert_with(|| Node::new(score));
+        }
+        cur.max_score = std::cmp::max(score, cur.max_score);
+        cur.items.push(Scored { item, score });
     }
 
     fn descendent(&self, path: &[u8]) -> Option<&Self> {
@@ -90,7 +97,7 @@ where
 
 enum ExploreMarker<'a, T> {
     Item(&'a T),
-    Node(&'a CompletionTree<T>),
+    Node(&'a Node<T>),
 }
 struct CompletionIter<'a, T> {
     queue: BinaryHeap<Scored<ExploreMarker<'a, T>>>,
@@ -101,7 +108,7 @@ impl<'a, T> CompletionIter<'a, T> {
             queue: BinaryHeap::new(),
         }
     }
-    fn from(node: &'a CompletionTree<T>) -> Self {
+    fn from(node: &'a Node<T>) -> Self {
         let mut queue = BinaryHeap::new();
         queue.push(Scored {
             item: ExploreMarker::Node(node),
@@ -139,7 +146,7 @@ impl<'a, T> Iterator for CompletionIter<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Completable, CompletionTree, Key};
+    use crate::{Completable, CompletionTree, Key, Node};
 
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     struct TestItem(String, i32);
