@@ -1,34 +1,39 @@
 use std::{
-    collections::{hash_set, BTreeMap, HashSet},
+    collections::{hash_set, BTreeMap, BinaryHeap, HashSet},
     hash::Hash,
 };
 
-struct CompletionTree<T> {
+type Score = i32;
+pub struct Key {
+    pub bytes: Vec<u8>,
+    pub score: Score,
+}
+pub trait Completable: Eq + Clone + Hash {
+    fn keys(&self) -> Vec<Key>;
+}
+
+pub struct CompletionTree<T> {
     items: HashSet<T>,
     children: BTreeMap<u8, CompletionTree<T>>,
+    max_score: Score,
 }
 impl<T> Default for CompletionTree<T> {
     fn default() -> Self {
         Self {
             items: Default::default(),
             children: Default::default(),
+            // TODO: change a tree to be a { node: Option<Node> } struct
+            // so that we don't have to populate a synthetic max_score.
+            max_score: 0,
         }
     }
-}
-
-struct Key {
-    bytes: Vec<u8>,
-    score: i32,
-}
-trait Completable: Eq + Clone + Hash {
-    fn keys(&self) -> Vec<Key>;
 }
 
 impl<T> CompletionTree<T>
 where
     T: Completable,
 {
-    fn put(&mut self, item: T) {
+    pub fn put(&mut self, item: T) {
         for key in item.keys() {
             self.put_key(key, item.clone());
         }
@@ -37,12 +42,14 @@ where
     fn put_key(&mut self, key: Key, item: T) {
         let mut cur = self;
         for b in key.bytes {
+            cur.max_score = std::cmp::max(key.score, cur.max_score);
             cur = cur.children.entry(b).or_default();
         }
+        cur.max_score = std::cmp::max(key.score, cur.max_score);
         cur.items.insert(item);
     }
 
-    fn search(&self, prefix: &[u8]) -> impl Iterator<Item = &T> {
+    pub fn search(&self, prefix: &[u8]) -> impl Iterator<Item = &T> {
         match self.descendent(prefix) {
             None => CompletionIter::empty(),
             Some(node) => CompletionIter::from(node),
@@ -58,20 +65,39 @@ where
     }
 }
 
+struct ExploreMarker<'a, T>(&'a CompletionTree<T>);
+impl<'a, T> Ord for ExploreMarker<'a, T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.max_score.cmp(&other.0.max_score)
+    }
+}
+impl<'a, T> PartialOrd for ExploreMarker<'a, T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<'a, T> PartialEq for ExploreMarker<'a, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.max_score == other.0.max_score
+    }
+}
+impl<'a, T> Eq for ExploreMarker<'a, T> {}
 struct CompletionIter<'a, T> {
-    queue: Vec<&'a CompletionTree<T>>,
+    queue: BinaryHeap<ExploreMarker<'a, T>>,
     cur: Option<hash_set::Iter<'a, T>>,
 }
 impl<'a, T> CompletionIter<'a, T> {
     fn empty() -> Self {
         Self {
-            queue: vec![],
+            queue: BinaryHeap::new(),
             cur: None,
         }
     }
     fn from(node: &'a CompletionTree<T>) -> Self {
+        let mut queue = BinaryHeap::new();
+        queue.push(ExploreMarker(node));
         Self {
-            queue: vec![node],
+            queue,
             cur: Some(node.items.iter()),
         }
     }
@@ -97,9 +123,9 @@ impl<'a, T> Iterator for CompletionIter<'a, T> {
             }
             match self.queue.pop() {
                 None => return None,
-                Some(node) => {
-                    for (b, child) in &node.children {
-                        self.queue.push(child);
+                Some(ExploreMarker(node)) => {
+                    for child in node.children.values() {
+                        self.queue.push(ExploreMarker(child));
                     }
                     self.cur = Some(node.items.iter());
                 }
