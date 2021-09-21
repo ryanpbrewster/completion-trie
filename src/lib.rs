@@ -146,7 +146,7 @@ impl<'a, T> Iterator for CompletionIter<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Completable, CompletionTree, Key, Node};
+    use crate::{Completable, CompletionTree, Key};
 
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     struct TestItem(String, i32);
@@ -163,6 +163,13 @@ mod tests {
             }]
         }
     }
+    macro_rules! make_tree {
+        ($($e:expr),*) => {{
+            let mut tree = CompletionTree::default();
+            $(tree.put($e.clone());)*
+            tree
+        }};
+    }
 
     #[test]
     fn smoke_test() {
@@ -170,10 +177,7 @@ mod tests {
         let alex = TestItem::new("alex", 4);
         let adam = TestItem::new("adam", -3);
 
-        let mut tree = CompletionTree::default();
-        tree.put(alice.clone());
-        tree.put(alex.clone());
-        tree.put(adam.clone());
+        let tree = make_tree!(alice, alex, adam);
         assert_eq!(
             tree.search(b"").collect::<Vec<_>>(),
             vec![&alex, &alice, &adam]
@@ -186,10 +190,7 @@ mod tests {
         let two = TestItem::new("aa", 0);
         let three = TestItem::new("aaa", 1);
 
-        let mut tree = CompletionTree::default();
-        tree.put(one.clone());
-        tree.put(two.clone());
-        tree.put(three.clone());
+        let tree = make_tree!(one, two, three);
         assert_eq!(
             tree.search(b"").collect::<Vec<_>>(),
             vec![&one, &three, &two]
