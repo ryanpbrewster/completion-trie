@@ -17,7 +17,7 @@ impl Completable for BenchItem {
 fn make_random_tree(prng: &mut SmallRng, n: usize) -> CompletionTree<BenchItem> {
     let mut tree = CompletionTree::default();
     for _ in 0..n {
-        let name = Alphanumeric.sample_string(prng, 10);
+        let name = Alphanumeric.sample_string(prng, 30);
         let score = prng.gen_range(0..1_000);
         tree.put(BenchItem(name, score));
     }
@@ -32,21 +32,16 @@ fn criterion_benchmark(c: &mut Criterion) {
         })
     });
 
-    c.bench_function("empty query 1k", |b| {
-        let tree = {
+    let query = b"blahblahgarbage";
+    for query_len in [0, 1, query.len()] {
+        for tree_size in [100, 1_000, 10_000, 100_000] {
             let mut prng = SmallRng::seed_from_u64(42);
-            make_random_tree(&mut prng, 1_000)
-        };
-        b.iter(|| black_box(tree.search(b"").nth(10)))
-    });
-
-    c.bench_function("zero match query 1k", |b| {
-        let tree = {
-            let mut prng = SmallRng::seed_from_u64(42);
-            make_random_tree(&mut prng, 1_000)
-        };
-        b.iter(|| black_box(tree.search(b"blahblahgarbage").nth(10)))
-    });
+            let tree = make_random_tree(&mut prng, 10_000);
+            c.bench_function(&format!("{}-query on {}-tree", query_len, tree_size), |b| {
+                b.iter(|| black_box(tree.search(&query[..query_len]).nth(10)))
+            });
+        }
+    }
 }
 
 criterion_group!(benches, criterion_benchmark);
