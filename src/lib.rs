@@ -148,14 +148,7 @@ impl<'a, T> Iterator for CompletionIter<'a, T> {
 mod tests {
     use crate::{Completable, CompletionTree, Key};
 
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    struct TestItem(String, i32);
-    impl TestItem {
-        fn new(name: &str, score: i32) -> TestItem {
-            TestItem(name.to_owned(), score)
-        }
-    }
-    impl Completable for TestItem {
+    impl Completable for (&str, i32) {
         fn keys(&self) -> Vec<Key> {
             vec![Key {
                 bytes: self.0.as_bytes().to_owned(),
@@ -164,36 +157,36 @@ mod tests {
         }
     }
     macro_rules! make_tree {
-        ($($e:expr),*) => {{
+        ($($key:expr => $score:expr, )*) => {{
             let mut tree = CompletionTree::default();
-            $(tree.put($e.clone());)*
+            $(tree.put(($key, $score));)*
             tree
         }};
     }
 
     #[test]
     fn smoke_test() {
-        let alice = TestItem::new("alice", 1);
-        let alex = TestItem::new("alex", 4);
-        let adam = TestItem::new("adam", -3);
-
-        let tree = make_tree!(alice, alex, adam);
+        let tree = make_tree!(
+            "alice" => 1,
+            "alex" => 4,
+            "adam" => -3,
+        );
         assert_eq!(
-            tree.search(b"").collect::<Vec<_>>(),
-            vec![&alex, &alice, &adam]
+            tree.search(b"").map(|r| r.0).collect::<Vec<_>>(),
+            ["alex", "alice", "adam"]
         )
     }
 
     #[test]
     fn exploration_prioritizes_shallower_items() {
-        let one = TestItem::new("a", 1);
-        let two = TestItem::new("aa", 0);
-        let three = TestItem::new("aaa", 1);
-
-        let tree = make_tree!(one, two, three);
+        let tree = make_tree!(
+            "a" => 1,
+            "aa" => 0,
+            "aaa" => 1,
+        );
         assert_eq!(
-            tree.search(b"").collect::<Vec<_>>(),
-            vec![&one, &three, &two]
+            tree.search(b"").map(|r| r.0).collect::<Vec<_>>(),
+            ["a", "aaa", "aa"]
         )
     }
 }
