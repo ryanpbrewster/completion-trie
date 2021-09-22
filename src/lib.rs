@@ -51,11 +51,14 @@ where
     }
 
     pub fn search(&self, prefix: &[u8]) -> impl Iterator<Item = &T> {
-        let descendent = self.0.as_ref().and_then(|root| root.descendent(prefix));
-        match descendent {
+        match self.descendent(prefix) {
             None => CompletionIter::empty(),
             Some(node) => CompletionIter::from(node),
         }
+    }
+
+    fn descendent(&self, prefix: &[u8]) -> Option<&Node<T>> {
+        self.0.as_ref()?.descendent(prefix)
     }
 }
 
