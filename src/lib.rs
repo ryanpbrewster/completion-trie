@@ -150,10 +150,18 @@ mod tests {
 
     impl Completable for (&str, i32) {
         fn keys(&self) -> Vec<Key> {
-            vec![Key {
-                bytes: self.0.as_bytes().to_owned(),
-                score: self.1,
-            }]
+            let mut buf = Vec::new();
+            let mut s = self.0;
+            loop {
+                buf.push(Key {
+                    bytes: s.as_bytes().to_vec(),
+                    score: self.1,
+                });
+                match s.find(' ') {
+                    Some(idx) => s = &s[idx + 1..],
+                    None => return buf,
+                }
+            }
         }
     }
     macro_rules! make_tree {
@@ -174,7 +182,7 @@ mod tests {
         assert_eq!(
             tree.search(b"").map(|r| r.0).collect::<Vec<_>>(),
             ["alex", "alice", "adam"]
-        )
+        );
     }
 
     #[test]
@@ -187,6 +195,36 @@ mod tests {
         assert_eq!(
             tree.search(b"").map(|r| r.0).collect::<Vec<_>>(),
             ["a", "aaa", "aa"]
-        )
+        );
+    }
+
+    #[test]
+    fn multikey_items_example() {
+        let tree = make_tree!(
+            "hello world" => 1,
+            "goodbye world" => 0,
+        );
+        assert_eq!(
+            tree.search(b"h").map(|r| r.0).collect::<Vec<_>>(),
+            ["hello world"]
+        );
+        assert_eq!(
+            tree.search(b"g").map(|r| r.0).collect::<Vec<_>>(),
+            ["goodbye world"]
+        );
+        assert_eq!(
+            tree.search(b"world").map(|r| r.0).collect::<Vec<_>>(),
+            ["hello world", "goodbye world"]
+        );
+        assert_eq!(
+            tree.search(b"").map(|r| r.0).collect::<Vec<_>>(),
+            // Both "hello"s come before both "goodbyes"
+            [
+                "hello world",
+                "hello world",
+                "goodbye world",
+                "goodbye world"
+            ]
+        );
     }
 }
