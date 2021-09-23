@@ -150,6 +150,7 @@ impl<'a, T> Iterator for CompletionIter<'a, T> {
 #[cfg(test)]
 mod tests {
     use crate::{Completable, CompletionTree, Key};
+    use itertools::Itertools;
 
     impl Completable for (&str, i32) {
         fn keys(&self) -> Vec<Key> {
@@ -186,6 +187,16 @@ mod tests {
             tree.search(b"").map(|r| r.0).collect::<Vec<_>>(),
             ["alex", "alice", "adam"]
         );
+    }
+
+    #[test]
+    fn empty_results() {
+        let tree = make_tree!(
+            "alice" => 1,
+            "alex" => 4,
+            "adam" => -3,
+        );
+        assert_eq!(tree.search(b"z").count(), 0);
     }
 
     #[test]
@@ -228,6 +239,11 @@ mod tests {
                 "goodbye world",
                 "goodbye world"
             ]
+        );
+
+        assert_eq!(
+            tree.search(b"").unique().map(|r| r.0).collect::<Vec<_>>(),
+            ["hello world", "goodbye world"]
         );
     }
 }
