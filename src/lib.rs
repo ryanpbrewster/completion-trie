@@ -213,6 +213,15 @@ mod tests {
     }
 
     #[test]
+    fn subsequences_are_not_matched() {
+        // Honestly this is kind of unfortunate, I wish it worked.
+        let tree = make_tree!(
+            "jeffrey smith" => 1,
+        );
+        assert_eq!(tree.search(b"jeff smith").count(), 0);
+    }
+
+    #[test]
     fn multikey_items_example() {
         let tree = make_tree!(
             "hello world" => 1,
